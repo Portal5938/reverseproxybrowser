@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Proxy Mirror</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body, html { width:100%; height:100%; font-family:sans-serif; background:#0f172a; overflow:hidden; }
+        .nav { height: 50px; background: #1e293b; display: flex; align-items: center; padding: 0 15px; }
+        .form { display: flex; width: 100%; gap: 10px; }
+        .input { flex-grow: 1; padding: 8px; border-radius: 4px; border: 1px solid #475569; background: #0f172a; color: #fff; }
+        .btn { padding: 0 15px; background: #38bdf8; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        .container { height: calc(100% - 50px); width: 100%; background: #fff; }
+        iframe { width: 100%; height: 100%; border: none; }
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <form class="form" id="pForm">
+            <input type="text" class="input" id="tUrl" placeholder="Enter site link (e.g. wikipedia.org)..." required>
+            <button type="submit" class="btn">Go</button>
+        </form>
+    </div>
+    <div class="container">
+        <iframe id="box" sandbox="allow-scripts allow-forms allow-same-origin"></iframe>
+    </div>
+    <script>
+        document.getElementById('pForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            let url = document.getElementById('tUrl').value.trim();
+            if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+            document.getElementById('box').src = `/proxy?url=${encodeURIComponent(url)}`;
+        });
+    </script>
+</body>
+</html>
