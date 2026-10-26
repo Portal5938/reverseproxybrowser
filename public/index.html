@@ -1,34 +1,236 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Proxy Mirror</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Host & Launcher</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body, html { width:100%; height:100%; font-family:sans-serif; background:#0f172a; overflow:hidden; }
-        .nav { height: 50px; background: #1e293b; display: flex; align-items: center; padding: 0 15px; }
-        .form { display: flex; width: 100%; gap: 10px; }
-        .input { flex-grow: 1; padding: 8px; border-radius: 4px; border: 1px solid #475569; background: #0f172a; color: #fff; }
-        .btn { padding: 0 15px; background: #38bdf8; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
-        .container { height: calc(100% - 50px); width: 100%; background: #fff; }
-        iframe { width: 100%; height: 100%; border: none; }
+        body, html { width: 100%; height: 100%; overflow: hidden; font-family: sans-serif; background: #121212; color: #fff; }
+        
+        #app-bar {
+            height: 48px;
+            background: #1e1e1e;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 16px;
+            border-bottom: 1px solid #333;
+            z-index: 10;
+            position: relative;
+        }
+
+        .btn {
+            background: #007acc;
+            color: #fff;
+            border: none;
+            padding: 8px 14px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .btn:hover { background: #005999; }
+
+        #game-container {
+            width: 100%;
+            height: calc(100vh - 48px);
+            position: relative;
+            background: #000;
+        }
+
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+
+        /* Dev Console Overlay (Ctrl + \) */
+        #dev-console {
+            display: none;
+            position: fixed;
+            top: 50px;
+            right: 20px;
+            width: 500px;
+            height: 400px;
+            background: rgba(20, 20, 20, 0.95);
+            border: 1px solid #007acc;
+            border-radius: 8px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.8);
+            z-index: 99999;
+            flex-direction: column;
+            backdrop-filter: blur(10px);
+        }
+
+        #dev-console-header {
+            padding: 8px 12px;
+            background: #007acc;
+            color: white;
+            font-weight: bold;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: move;
+        }
+
+        #dev-output {
+            flex: 1;
+            padding: 10px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 13px;
+            color: #4af626;
+            background: #0d0d0d;
+            white-space: pre-wrap;
+        }
+
+        #dev-input-container {
+            display: flex;
+            border-top: 1px solid #333;
+        }
+
+        #dev-input {
+            flex: 1;
+            background: #181818;
+            border: none;
+            color: #fff;
+            padding: 10px;
+            font-family: monospace;
+            outline: none;
+        }
+
+        #dev-run-btn {
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 0 16px;
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
-    <div class="nav">
-        <form class="form" id="pForm">
-            <input type="text" class="input" id="tUrl" placeholder="Enter site link (e.g. wikipedia.org)..." required>
-            <button type="submit" class="btn">Go</button>
-        </form>
+
+    <div id="app-bar">
+        <div>
+            <label class="btn" for="file-input">Import Game (.html / .txt)</label>
+            <input type="file" id="file-input" accept=".html,.txt" style="display:none;">
+            <select id="game-select" style="padding: 8px; background: #252526; color: white; border: 1px solid #444; border-radius: 4px; margin-left: 10px;">
+                <option value="">-- Select Saved Game --</option>
+            </select>
+        </div>
+        <div style="font-size: 13px; color: #aaa;">
+            Press <kbd>Ctrl + \</kbd> to open Dev Console
+        </div>
     </div>
-    <div class="container">
-        <iframe id="box" sandbox="allow-scripts allow-forms allow-same-origin"></iframe>
+
+    <div id="game-container">
+        <iframe id="game-iframe" allow="autoplay; fullscreen; camera; microphone; clipboard-read; clipboard-write; pointer-lock"></iframe>
     </div>
+
+    <!-- Dev Console UI -->
+    <div id="dev-console">
+        <div id="dev-console-header">
+            <span>DevTools Console</span>
+            <span style="cursor:pointer;" onclick="toggleDevConsole()">✕</span>
+        </div>
+        <div id="dev-output">> Dev console active. Target: Game Window Context.\n> Type JavaScript or bookmarklet code below.</div>
+        <div id="dev-input-container">
+            <input type="text" id="dev-input" placeholder="javascript:alert('Hello') or console.log(window)" />
+            <button id="dev-run-btn" onclick="runDevCode()">Run</button>
+        </div>
+    </div>
+
     <script>
-        document.getElementById('pForm').addEventListener('submit', (e) => {
-            e.preventDefault();
-            let url = document.getElementById('tUrl').value.trim();
-            if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
-            document.getElementById('box').src = `/proxy?url=${encodeURIComponent(url)}`;
+        const fileInput = document.getElementById('file-input');
+        const gameSelect = document.getElementById('game-select');
+        const gameIframe = document.getElementById('game-iframe');
+        const devConsole = document.getElementById('dev-console');
+        const devInput = document.getElementById('dev-input');
+        const devOutput = document.getElementById('dev-output');
+
+        // Fetch uploaded games list on load
+        async function loadGamesList() {
+            const res = await fetch('/api/games');
+            const games = await res.json();
+            gameSelect.innerHTML = '<option value="">-- Select Saved Game --</option>';
+            games.forEach(g => {
+                const opt = document.createElement('option');
+                opt.value = g.url;
+                opt.textContent = g.name;
+                gameSelect.appendChild(opt);
+            });
+        }
+        loadGamesList();
+
+        // Game Selection Change
+        gameSelect.addEventListener('change', (e) => {
+            if (e.target.value) {
+                gameIframe.src = e.target.value;
+            }
+        });
+
+        // Import Game Handler
+        fileInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('gameFile', file);
+
+            devLog(`Uploading ${file.name}...`);
+            const res = await fetch('/upload', { method: 'POST', body: formData });
+            const data = await res.json();
+
+            if (data.success) {
+                await loadGamesList();
+                gameIframe.src = data.gameUrl;
+                gameSelect.value = data.gameUrl;
+                devLog(`Loaded ${file.name} successfully.`);
+            } else {
+                alert('Upload failed: ' + data.error);
+            }
+        });
+
+        // Toggle Dev Console with Ctrl + \
+        window.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && (e.key === '\\' || e.code === 'Backslash')) {
+                e.preventDefault();
+                toggleDevConsole();
+            }
+        });
+
+        function toggleDevConsole() {
+            devConsole.style.display = devConsole.style.display === 'flex' ? 'none' : 'flex';
+            if (devConsole.style.display === 'flex') devInput.focus();
+        }
+
+        function devLog(msg) {
+            devOutput.textContent += '\n' + msg;
+            devOutput.scrollTop = devOutput.scrollHeight;
+        }
+
+        // Run JavaScript inside iframe context
+        function runDevCode() {
+            let code = devInput.value.trim();
+            if (!code) return;
+
+            // Handle bookmarklet prefix
+            if (code.startsWith('javascript:')) {
+                code = decodeURIComponent(code.replace('javascript:', ''));
+            }
+
+            devLog('> ' + code);
+            try {
+                const targetWindow = gameIframe.contentWindow;
+                const result = targetWindow.eval(code);
+                devLog('< ' + (result !== undefined ? String(result) : 'undefined'));
+            } catch (err) {
+                devLog('[Error] ' + err.message);
+            }
+            devInput.value = '';
+        }
+
+        devInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') runDevCode();
         });
     </script>
 </body>
